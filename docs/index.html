@@ -42,12 +42,15 @@ h2 {
   margin: 0 auto 10px;
   width: 100%;
 }
+div.exif-container {
+  background: #f3f3f3;
+  margin: 5px 0 10px;
+}
 div.exif-data {
+  float: left;
+  width: 50%;
   box-sizing: border-box;
   padding: 10px 20px;
-  background: #f3f3f3;
-  margin: 5px auto 10px;
-  width: 100%;
 }
 div.exif-data dl dt {
   width: 140px;
@@ -55,6 +58,16 @@ div.exif-data dl dt {
 }
 div.exif-data dl dd {
   margin: 0 0 0 140px;
+}
+div.exif-raw {
+  float: left;
+  width: 50%;
+  box-sizing: border-box;
+  padding: 10px 20px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: courier;
+  font-size: 0.8rem;
 }
 .exif-error {
   box-sizing: border-box;
@@ -107,21 +120,24 @@ footer a {
   </div>
   <div class="step-container">    
     <h2>2. EXIF data</h2>
-    <div class="exif-data">
-      <dl>
-        <template v-for="(exif, i) in exif.data" :key="i">
-          <dt>${ exif.name }</dt>
-          <dd>${ exif.value }</dd>
-        </template>
-      </dl>
+    <div class="preview-container clearfix">
+      <img id="preview" class="preview">
+      <div id="leaflet-map" class="leaflet-map"></div>
+    </div>
+    <div class="exif-container clearfix">
+      <div class="exif-data">
+        <dl>
+          <template v-for="(exif, i) in exif.data" :key="i">
+            <dt>${ exif.name }</dt>
+            <dd>${ exif.value }</dd>
+          </template>
+        </dl>
+      </div>
+      <div class="exif-raw" v-html="exif.raw"></div>
     </div>
     <div class="exif-error" v-if="exif.error.length > 0">
       ERROR：
       <span v-for="e in exif.error">${ e }</span>
-    </div>
-    <div class="preview-container clearfix">
-      <img id="preview" class="preview">
-      <div id="leaflet-map" class="leaflet-map"></div>
     </div>
   </div>
   <footer><p>&copy; <a href="https://cocolab.jp">cocolab.jp</a></p></footer>
@@ -181,6 +197,14 @@ var app = new Vue({
 
             let tags = extension == 'heic' ? findEXIFinHEIC(reader.result)
                                            : findEXIFinJPEG(reader.result);
+
+            let tagTmp = Util.deepCopy(tags);
+            if(tagTmp["MakerNote"] != undefined) { tagTmp["MakerNote"] = JSON.stringify(tagTmp["MakerNote"]); }
+            if(tagTmp["SubjectArea"] != undefined) { tagTmp["SubjectArea"] = JSON.stringify(tagTmp["SubjectArea"]); }
+            if(tagTmp["GPSLatitude"] != undefined) { tagTmp["GPSLatitude"] = JSON.stringify(tagTmp["GPSLatitude"]); }
+            if(tagTmp["GPSLongitude"] != undefined) { tagTmp["GPSLongitude"] = JSON.stringify(tagTmp["GPSLongitude"]); }
+            this.exif.raw = JSON.stringify(tagTmp, undefined, 2);
+
             let model = tags['Model'];
             let datetime = tags['DateTime'];
             let latDMS = tags['GPSLatitude'];
@@ -314,6 +338,9 @@ var app = new Vue({
 
 
 const Util = {
+  deepCopy: (json) => {
+    return JSON.parse(JSON.stringify(json));
+  },
   exifDate2unixTimestamp: (exifDateStr) => {
     let date = new Date(Util.exifDate2ISODate(exifDateStr));
     return Math.floor(date.getTime() / 1000);
