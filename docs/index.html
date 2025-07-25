@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EXIF Checker</title>
+<style type="text/css">
+* {
+  margin: 0;
+  padding: 0;
+}
+.clearfix::after {
+  content: "";
+  display: block;
+  clear: both;
+}
+body {
+  font-family: sans-serif;
+}
+h1 {
+  text-align: center;
+  font-size: 1.2em;
+  background: gray;
+  color: white;
+  padding: 10px;
+}
+div.step-container {
+  width: min(90%, 1200px);
+  padding: 10px 15px;
+  margin: 10px auto;
+  background: #fcfcfc;
+  border-radius: 5px;
+  box-shadow: 0px 1px 3px rgba(0, 0, 0, 0.1);
+}
+.file-input {
+  display: block;
+  margin: 0 auto;
+  padding: 5px;
+}
+h2 {
+  font-size: 1rem;
+  margin: 0 auto 10px;
+  width: 100%;
+}
+div.exif-data {
+  box-sizing: border-box;
+  padding: 10px 20px;
+  background: #f3f3f3;
+  margin: 5px auto 10px;
+  width: 100%;
+}
+div.exif-data dl dt {
+  width: 140px;
+  float: left;
+}
+div.exif-data dl dd {
+  margin: 0 0 0 140px;
+}
+.exif-error {
+  box-sizing: border-box;
+  padding: 10px 20px;
+  background: #fcc;
+  width: 100%;
+  margin: 5px auto 10px;
+}
+.preview-container {
+  width: 100%;
+  height: auto;
+  margin: 5px auto;
+}
+.preview {
+  float: left;
+  display: block;
+  width: min(50%, 600px);
+  height: auto;
+  aspect-ratio: 4/3;
+  margin: 0 auto;
+  object-fit: cover;
+}
+.leaflet-map {
+  float: left;
+  display: block;
+  width: min(50%, 600px);
+  height: auto;
+  aspect-ratio: 4/3;
+  margin: 0 auto;
+  background: #eee;
+}
+footer {
+  text-align: center;
+  font-size: 0.8rem;
+  color: #999;
+  padding: 20px;
+}
+footer a {
+  color: #999;
+  text-decoration: none;
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header><h1>EXIF Checker</h1></header>
+  <div class="step-container">
+    <h2>1. Select File</h2>
+    <input class="file-input" id="file-input" type="file" @change="inspectFile"/>
+  </div>
+  <div class="step-container">    
+    <h2>2. EXIF data</h2>
+    <div class="exif-data">
+      <dl>
+        <template v-for="(exif, i) in exif.data" :key="i">
+          <dt>${ exif.name }</dt>
+          <dd>${ exif.value }</dd>
+        </template>
+      </dl>
+    </div>
+    <div class="exif-error" v-if="exif.error.length > 0">
+      ERROR：
+      <span v-for="e in exif.error">${ e }</span>
+    </div>
+    <div class="preview-container clearfix">
+      <img id="preview" class="preview">
+      <div id="leaflet-map" class="leaflet-map"></div>
+    </div>
+  </div>
+  <footer><p>&copy; <a href="https://cocolab.jp">cocolab.jp</a></p></footer>
+</div>
+</body>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A==" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js" integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA==" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/exif-heic-js/exif-heic-js/exif-heic.min.js"></script>
+<script src="https://unpkg.com/heic2any/dist/heic2any.min.js"></script>
+<script type="text/javascript">
+const $ = (id) => {
+  return document.getElementById(id);
+}
+const mapTileServer = {
+  URL: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  ATTRIBUTION: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  MIN_ZOOM: 5,
+  MAX_ZOOM: 18
+};
+var app = new Vue({
+  delimiters: ['${', '}'],
+  el: '#app',
+  data: {
+    exif: {
+      data: {},
+      error: [],
+    },
+    debug: "",
+    map: null,
+    marker: null,
+    photo: {
+      lat: 0,
+      lng: 0,
+    }
+  },
+  created: function() {
+  },
+  mounted: function() {
+  },
+  destroyed: function () {
+  },
+  methods: {
+    inspectFile(e) {
+      if (e.target.files.length == 0) { return }
+      let file = e.target.files[0];
+      let extension = file.name.toLowerCase().split('.').pop();
+      switch (extension) {
+        case 'jpeg':
+        case 'jpg':
+        case 'heic':
+          let reader = new FileReader();
+          reader.onload = async () => {
+
+            this.exif.data = {};
+            this.exif.error = [];
+
+            let tags = extension == 'heic' ? findEXIFinHEIC(reader.result)
+                                           : findEXIFinJPEG(reader.result);
+            let model = tags['Model'];
+            let datetime = tags['DateTime'];
+            let latDMS = tags['GPSLatitude'];
+            let latRef = tags['GPSLatitudeRef'];
+            let lngDMS = tags['GPSLongitude'];
+            let lngRef = tags['GPSLongitudeRef'];
+            let direction = tags['GPSImgDirection'];
+
+            if (latDMS == undefined || lngDMS == undefined || latRef == undefined || lngRef == undefined) {
+              this.exif.error.push("撮影位置情報がありません");
+            }
+            if (datetime == undefined) {
+              this.exif.error.push("撮影日時情報がありません");
+            }
+
+            if (this.exif.error.length == 0) {
+              this.photo.timestamp    = Util.exifDate2unixTimestamp(datetime);
+              this.photo.lat = Util.decodeExifLocation(latDMS, latRef);
+              this.photo.lng = Util.decodeExifLocation(lngDMS, lngRef);
+
+              this.exif.data = {
+                datetime:         {name: "日時",        value: Util.exifDate2ISODate(datetime)},
+                location_lat:     {name: "緯度",        value: this.photo.lat + "（" + latDMS.join(",") + " " + latRef +"）"},
+                location_lng:     {name: "経度",        value: this.photo.lng + "（" + lngDMS.join(",") + " " + lngRef +"）"},
+                model:            {name: "デバイス",     value: tags['Model']},
+                direction:        {name: "方角",        value: Util.degrees2CompassLabel(Util.fraction2decimal(tags['GPSImgDirection'])) + "（" + tags['GPSImgDirection'].toFixed(2) + "°）"},
+                isoSpeed:         {name: "ISO感度",     value: "ISO" + Util.getExifISO(tags)},
+                shutterSpeed:     {name: "シャッター速度", value: "1/" + Math.round(Math.pow(tags['ShutterSpeedValue'], 2))},
+                focalLength:      {name: "焦点距離",     value: tags['FocalLengthIn35mmFilm'].toFixed(1) + "mm"},
+                fNumber:          {name: "F値",         value: "f/" + Util.fraction2decimal(tags['FNumber']).toFixed(1)},
+              };
+
+              this.photo.caption = `${this.exif.data.model.value} ・ ` +
+                                       `${this.exif.data.direction.value} ・ ` +
+                                       `${this.exif.data.fNumber.value} ・ ` +
+                                       `${this.exif.data.shutterSpeed.value} ・ ` +
+                                       `${this.exif.data.focalLength.value} ・ ` +
+                                       `${this.exif.data.isoSpeed.value}`;
+
+              this.showMap();
+
+            } else {
+              this.exif.data = {};
+            }
+
+            $('preview').src = "dummy.png";
+            if (extension === 'heic') {
+              try {
+                const convertedBlob = await heic2any({
+                  blob: file,
+                  toType: 'image/jpeg',
+                  quality: 0.8
+                });
+                const url = URL.createObjectURL(convertedBlob);
+                $('preview').src = url;
+              } catch (err) {
+                console.error("HEIC変換失敗:", err);
+              }
+            } else {
+              // JPEGの場合はFileReaderでBase64にして表示
+              let imageReader = new FileReader();
+              imageReader.onload = () => {
+                $('preview').src = imageReader.result;
+              };
+              imageReader.readAsDataURL(file);
+            }
+          }
+          reader.readAsArrayBuffer(e.target.files[0]);
+          break;
+      }
+    },
+    showMap() {
+      let photoLatlng = [this.photo.lat, this.photo.lng];
+      if(this.map == null) {
+        this.map = L.map('leaflet-map', {
+            center: photoLatlng,
+            zoom: 13,
+            zoomControl: true,
+            dragging: false,
+            minZoom: mapTileServer.MIN_ZOOM,
+            maxZoom: mapTileServer.MAX_ZOOM
+          })
+          .on('mouseup', e => {
+            console.log("map mouseup");
+            L.DomEvent.stopPropagation(e);
+          })
+          .on('zoomend moveend', e => {
+          });
+        // タイルの設定
+        L.tileLayer(mapTileServer.URL, { attribution: mapTileServer.ATTRIBUTION })
+         .addTo(this.map);
+      }
+      if(this.marker != null) {
+        this.marker.remove();
+      }
+      this.marker = L.marker(photoLatlng);
+      this.marker.addTo(this.map);
+      this.map.panTo(photoLatlng)
+    }
+  },
+  computed: {
+
+  }
+});
+
+
+const Util = {
+  exifDate2unixTimestamp: (exifDateStr) => {
+    let date = new Date(Util.exifDate2ISODate(exifDateStr));
+    return Math.floor(date.getTime() / 1000);
+  },
+  exifDate2ISODate: (exifDateStr) => {
+    return exifDateStr.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3').replace(' ', 'T');
+  },
+  decodeExifLocation: (dms, ref) => {
+    let loc = Math.round((dms[0] + dms[1]/60 + dms[2]/3600) * 100000) / 100000;
+    if(ref == "S" || ref == "W") { loc *= -1; }
+    return loc;
+  },
+  getExifISO(tags) {
+    const iso = tags['ISOSpeedRatings'] || tags['PhotographicSensitivity'];
+    if (Array.isArray(iso)) { return iso[0]; }
+    return iso;
+  },
+  fraction2decimal: (data) => {
+    if(!data ||
+        typeof data !== 'object' ||
+        typeof data.numerator !== 'number' ||
+        typeof data.denominator !== 'number') { return undefined; }
+    return data.numerator / data.denominator;
+  },
+  degrees2CompassLabel: (degrees) => {
+    if (typeof degrees !== 'number' || isNaN(degrees)) {　return undefined;　}
+    const directions = [
+      "北", "北北東", "北東", "東北東",
+      "東", "東南東", "南東", "南南東",
+      "南", "南南西", "南西", "西南西",
+      "西", "西北西", "北西", "北北西"
+    ];
+    const index = Math.round(degrees / 22.5) % 16;
+    return directions[index];
+  },
+};
+
+</script>
+</html>
