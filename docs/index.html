@@ -191,40 +191,66 @@ var app = new Vue({
 
             if (latDMS == undefined || lngDMS == undefined || latRef == undefined || lngRef == undefined) {
               this.exif.error.push("撮影位置情報がありません");
+              this.photo.lat = 0;
+              this.photo.lng = 0;
+              this.photo.lat_str = "(no data)";
+              this.photo.lng_str = "(no data)";
+            } else {
+              this.photo.lat = Util.decodeExifLocation(latDMS, latRef);
+              this.photo.lng = Util.decodeExifLocation(lngDMS, lngRef);
+              this.photo.lat_str = Util.decodeExifLocation(latDMS, latRef) + "（" + latDMS.join(",") + " " + latRef +"）";
+              this.photo.lng_str = Util.decodeExifLocation(lngDMS, lngRef) + "（" + lngDMS.join(",") + " " + lngRef +"）";
+            }
+            if (direction == undefined) {
+              this.photo.dir = "(no data)";
+            } else {
+              this.photo.dir = Util.degrees2CompassLabel(Util.fraction2decimal(direction)) + "（" + direction.toFixed(2) + "°）";
+            }
+            if (tags['Model'] == undefined) {
+              this.photo.model = "(no data)";
+            } else {
+              this.photo.model = tags['Model'];
             }
             if (datetime == undefined) {
               this.exif.error.push("撮影日時情報がありません");
-            }
-
-            if (this.exif.error.length == 0) {
-              this.photo.timestamp    = Util.exifDate2unixTimestamp(datetime);
-              this.photo.lat = Util.decodeExifLocation(latDMS, latRef);
-              this.photo.lng = Util.decodeExifLocation(lngDMS, lngRef);
-
-              this.exif.data = {
-                datetime:         {name: "日時",        value: Util.exifDate2ISODate(datetime)},
-                location_lat:     {name: "緯度",        value: this.photo.lat + "（" + latDMS.join(",") + " " + latRef +"）"},
-                location_lng:     {name: "経度",        value: this.photo.lng + "（" + lngDMS.join(",") + " " + lngRef +"）"},
-                model:            {name: "デバイス",     value: tags['Model']},
-                direction:        {name: "方角",        value: Util.degrees2CompassLabel(Util.fraction2decimal(tags['GPSImgDirection'])) + "（" + tags['GPSImgDirection'].toFixed(2) + "°）"},
-                isoSpeed:         {name: "ISO感度",     value: "ISO" + Util.getExifISO(tags)},
-                shutterSpeed:     {name: "シャッター速度", value: "1/" + Math.round(Math.pow(tags['ShutterSpeedValue'], 2))},
-                focalLength:      {name: "焦点距離",     value: tags['FocalLengthIn35mmFilm'].toFixed(1) + "mm"},
-                fNumber:          {name: "F値",         value: "f/" + Util.fraction2decimal(tags['FNumber']).toFixed(1)},
-              };
-
-              this.photo.caption = `${this.exif.data.model.value} ・ ` +
-                                       `${this.exif.data.direction.value} ・ ` +
-                                       `${this.exif.data.fNumber.value} ・ ` +
-                                       `${this.exif.data.shutterSpeed.value} ・ ` +
-                                       `${this.exif.data.focalLength.value} ・ ` +
-                                       `${this.exif.data.isoSpeed.value}`;
-
-              this.showMap();
-
+              this.photo.datetime = "(no data)";
             } else {
-              this.exif.data = {};
+              this.photo.datetime = datetime;
             }
+            if (tags['ISOSpeedRatings'] == undefined && tags['PhotographicSensitivity'] == undefined) {
+              this.photo.iso = "(no data)";
+            } else {
+              this.photo.iso = "ISO" + Util.getExifISO(tags);
+            }
+            if (tags['ShutterSpeedValue'] == undefined) {
+              this.photo.shutterSpeed = "(no data)";
+            } else {
+              this.photo.shutterSpeed = "1/" + Math.round(Math.pow(tags['ShutterSpeedValue'], 2));
+            }
+            if (tags['FocalLengthIn35mmFilm'] == undefined) {
+              this.photo.FocalLength = "(no data)";
+            } else {
+              this.photo.FocalLength = tags['FocalLengthIn35mmFilm'].toFixed(1) + "mm";
+            }
+            if (tags['FNumber'] == undefined) {
+              this.photo.FNumber = "(no data)";
+            } else {
+              this.photo.FNumber = "f/" + Util.fraction2decimal(tags['FNumber']).toFixed(1);
+            }
+
+            this.exif.data = {
+              datetime:         {name: "日時",        value: this.photo.datetime},
+              location_lat:     {name: "緯度",        value: this.photo.lat_str},
+              location_lng:     {name: "経度",        value: this.photo.lng_str},
+              model:            {name: "デバイス",     value: this.photo.model},
+              direction:        {name: "方角",        value: this.photo.dir},
+              isoSpeed:         {name: "ISO感度",     value: this.photo.iso},
+              shutterSpeed:     {name: "シャッター速度", value: this.photo.shutterSpeed},
+              focalLength:      {name: "焦点距離",     value: this.photo.FocalLength},
+              fNumber:          {name: "F値",         value: this.photo.FNumber},
+            };
+
+            this.showMap();
 
             $('preview').src = "dummy.png";
             if (extension === 'heic') {
